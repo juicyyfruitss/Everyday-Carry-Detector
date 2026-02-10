@@ -8,6 +8,7 @@ from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.textinput import TextInput
 from kivy.clock import Clock
 import database
+from kivy.uix.scrollview import ScrollView
 
 LevelLabels = {
         "DEBUG": "Info",
@@ -112,11 +113,12 @@ class KivyLogHandler(logging.Handler):
                 self.widget.cursor = (0, len(self.widget.text))
             # Schedule on main thread
             Clock.schedule_once(AddsText, 0)
+    
 
         except Exception:
             self.handleError(record)
 
-
+    
 # ---------- Utilities for loading & filtering saved logs ----------
 
 def LogFiles(LogDir: Path, base: str = "app.log") -> list[Path]:

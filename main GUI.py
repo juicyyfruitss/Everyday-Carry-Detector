@@ -14,6 +14,8 @@ import log
 import database
 import logging
 from pathlib import Path
+from kivy.uix.scrollview import ScrollView
+
 
 # --- Theme Settings ---
 # Dark mode colors
@@ -436,11 +438,30 @@ class LogbookScreen(Screen):
         self.LogDir.mkdir(parents=True, exist_ok=True)
 
         # Log Display
-        label = Label( text="No logs recorded yet.",
-            color=THEME["text_secondary"])
-        root.add_widget(label)
+        label = Label( text="There is no log data to display.", 
+            font_size=dp(24),
+            color = THEME["text_secondary"],
+            size_hint_y = None,
+            halign = 'left',
+            valign = 'top')
+        label.bind(texture_size = self.update_height)
+        label.bind(width = self.update_width)
+
+         # Scroll View for log display
+        scroll = ScrollView(size_hint=(1, 1))
+        scroll.add_widget(label)
+
+        root.add_widget(scroll)
+
+        DB = database.DB()  
 
         # UI handler: friendly text
+        if len(DB.GetEvents()) == 0:
+            label.text = "No log events found."
+        else:
+            label.text = ""
+
+        scroll = ScrollView(size_hint=(1, 1))
         UIHandler = log.KivyLogHandler(
             widget = label,
             formatter = log.UserFormatter(),
@@ -448,7 +469,7 @@ class LogbookScreen(Screen):
             ExcludeKeywords = self.ExcludeKeywords,
             MaxLines = 2000,
         )
-
+        
         # DB handler: logs to database
         DB = database.DB()
 
@@ -493,6 +514,12 @@ class LogbookScreen(Screen):
         root.add_widget(back_btn)
 
         self.add_widget(root)
+
+    def update_height(self, instance, value):
+        instance.height = value[1]
+
+    def update_width(self, instance, width):
+        instance.text_size = (width, None)
 
     def go_back(self, instance):
         self.manager.current = 'main'
