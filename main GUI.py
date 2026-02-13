@@ -10,7 +10,7 @@ from kivy.graphics import Color, RoundedRectangle, Line
 from kivy.metrics import dp
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.gridlayout import GridLayout
-import log 
+import log
 import database
 import logging
 from pathlib import Path
@@ -207,32 +207,34 @@ class ItemCard(BoxLayout):
 class LoginScreen(Screen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        self.db = database.DB()
+        self.mode = 'login'  # 'login' or 'signup'
 
         # Login card layout
         card = BoxLayout(orientation='vertical',
                          padding=dp(40), spacing=dp(24))
         card.size_hint = (None, None)
-        card.size = (dp(360), dp(480))
+        card.size = (dp(360), dp(520))  # Increased height for feedback/toggle
         card.pos_hint = {'center_x': 0.5, 'center_y': 0.5}
 
         # Title
         title_box = BoxLayout(orientation='vertical',
                               size_hint_y=None, height=dp(80), spacing=dp(5))
-        title = Label(
+        self.title_lbl = Label(
             text="Everyday Carry",
             font_size=dp(36),
             bold=True,
             color=THEME["text_primary"],
             halign='center'
         )
-        subtitle = Label(
+        self.subtitle_lbl = Label(
             text="Your digital loadout manager.",
             font_size=dp(16),
             color=THEME["text_secondary"],
             halign='center'
         )
-        title_box.add_widget(title)
-        title_box.add_widget(subtitle)
+        title_box.add_widget(self.title_lbl)
+        title_box.add_widget(self.subtitle_lbl)
         card.add_widget(title_box)
 
         # Inputs
@@ -244,15 +246,84 @@ class LoginScreen(Screen):
         input_container.add_widget(self.password)
         card.add_widget(input_container)
 
-        # Login Button
-        login_btn = ProButton(text="Sign In", height=dp(54), size_hint_y=None)
-        login_btn.bind(on_release=self.check_login)
-        card.add_widget(login_btn)
+        # Feedback Label
+        self.feedback_lbl = Label(
+            text="",
+            font_size=dp(14),
+            color=THEME["danger"],
+            size_hint_y=None,
+            height=dp(20),
+            halign='center'
+        )
+        card.add_widget(self.feedback_lbl)
+
+        # Main Action Button (Login/Signup)
+        self.action_btn = ProButton(
+            text="Sign In", height=dp(54), size_hint_y=None)
+        self.action_btn.bind(on_release=self.perform_action)
+        card.add_widget(self.action_btn)
+
+        # Toggle Mode Button
+        self.toggle_btn = Button(
+            text="New here? Create an account",
+            font_size=dp(14),
+            color=THEME["primary"],
+            background_normal="",
+            background_down="",
+            background_color=(0, 0, 0, 0),
+            size_hint_y=None,
+            height=dp(30)
+        )
+        self.toggle_btn.bind(on_release=self.toggle_mode)
+        card.add_widget(self.toggle_btn)
 
         self.add_widget(card)
 
-    def check_login(self, instance):
-        self.manager.current = 'main'
+    def toggle_mode(self, instance):
+        if self.mode == 'login':
+            self.mode = 'signup'
+            self.title_lbl.text = "Create Account"
+            self.subtitle_lbl.text = "Join Everyday Carry today."
+            self.action_btn.text = "Sign Up"
+            self.toggle_btn.text = "Already have an account? Sign In"
+            self.feedback_lbl.text = ""
+        else:
+            self.mode = 'login'
+            self.title_lbl.text = "Everyday Carry"
+            self.subtitle_lbl.text = "Your digital loadout manager."
+            self.action_btn.text = "Sign In"
+            self.toggle_btn.text = "New here? Create an account"
+            self.feedback_lbl.text = ""
+
+    def perform_action(self, instance):
+        user = self.username.text.strip()
+        pwd = self.password.text.strip()
+
+        if not user or not pwd:
+            self.feedback_lbl.text = "Please enter both username and password."
+            self.feedback_lbl.color = THEME["danger"]
+            return
+
+        if self.mode == 'login':
+            if self.db.verify_user(user, pwd):
+                self.feedback_lbl.text = ""
+                self.manager.current = 'main'
+                self.username.text = ""
+                self.password.text = ""
+            else:
+                self.feedback_lbl.text = "Invalid username or password."
+                self.feedback_lbl.color = THEME["danger"]
+        else:  # signup
+            if self.db.create_user(user, pwd):
+                self.feedback_lbl.text = "Account created! Please sign in."
+                self.feedback_lbl.color = THEME["accent"]
+                # Switch back to login mode
+                self.toggle_mode(None)
+                self.username.text = user  # Keep username filled
+                self.password.text = ""
+            else:
+                self.feedback_lbl.text = "Username already exists."
+                self.feedback_lbl.color = THEME["danger"]
 
 
 class AddItemScreen(Screen):
@@ -425,11 +496,11 @@ class LogbookScreen(Screen):
         root = BoxLayout(orientation='vertical',
                          padding=dp(30), spacing=dp(20))
         IncludeKeywords: list[str] = []          # e.g., ["bedroom"]
-        ExcludeKeywords: list[str] = [] # example of hiding a term
+        ExcludeKeywords: list[str] = []  # example of hiding a term
         self.IncludeKeywords = IncludeKeywords
-        self.ExcludeKeywords = [k.lower() for k in ExcludeKeywords]    
+        self.ExcludeKeywords = [k.lower() for k in ExcludeKeywords]
 
-         # Logger
+        # Logger
         self.logger = logging.getLogger("home-monitor")
         self.logger.setLevel(logging.INFO)
 
@@ -438,22 +509,22 @@ class LogbookScreen(Screen):
         self.LogDir.mkdir(parents=True, exist_ok=True)
 
         # Log Display
-        label = Label( text="There is no log data to display.", 
-            font_size=dp(24),
-            color = THEME["text_secondary"],
-            size_hint_y = None,
-            halign = 'left',
-            valign = 'top')
-        label.bind(texture_size = self.update_height)
-        label.bind(width = self.update_width)
+        label = Label(text="There is no log data to display.",
+                      font_size=dp(24),
+                      color=THEME["text_secondary"],
+                      size_hint_y=None,
+                      halign='left',
+                      valign='top')
+        label.bind(texture_size=self.update_height)
+        label.bind(width=self.update_width)
 
-         # Scroll View for log display
+        # Scroll View for log display
         scroll = ScrollView(size_hint=(1, 1))
         scroll.add_widget(label)
 
         root.add_widget(scroll)
 
-        DB = database.DB()  
+        DB = database.DB()
 
         # UI handler: friendly text
         if len(DB.GetEvents()) == 0:
@@ -463,13 +534,13 @@ class LogbookScreen(Screen):
 
         scroll = ScrollView(size_hint=(1, 1))
         UIHandler = log.KivyLogHandler(
-            widget = label,
-            formatter = log.UserFormatter(),
-            IncludeKeywords = self.IncludeKeywords,
-            ExcludeKeywords = self.ExcludeKeywords,
-            MaxLines = 2000,
+            widget=label,
+            formatter=log.UserFormatter(),
+            IncludeKeywords=self.IncludeKeywords,
+            ExcludeKeywords=self.ExcludeKeywords,
+            MaxLines=2000,
         )
-        
+
         # DB handler: logs to database
         DB = database.DB()
 
@@ -488,13 +559,11 @@ class LogbookScreen(Screen):
                 label.text += message
                 if index <= lenEvents - 2:
                     label.text += "\n"
-            
 
         # Example logs (you can remove these in production)
         self.logger.info("Bedroom: motion detected")
         self.logger.info("Kitchen: temperature normal")
         self.logger.warning("Garage: Phone is leaving house")
-
 
         # Header
         root.add_widget(Label(
@@ -523,8 +592,6 @@ class LogbookScreen(Screen):
 
     def go_back(self, instance):
         self.manager.current = 'main'
-
-    
 
 
 class SettingsScreen(Screen):
