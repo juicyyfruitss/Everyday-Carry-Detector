@@ -240,7 +240,7 @@ class LoginScreen(Screen):
         # Inputs
         input_container = BoxLayout(orientation='vertical', spacing=dp(
             15), size_hint_y=None, height=dp(130))
-        self.username = ProInput(hint_text="Username")
+        self.username = ProInput(hint_text="Email Address")
         self.password = ProInput(hint_text="Password", password=True)
         input_container.add_widget(self.username)
         input_container.add_widget(self.password)
@@ -300,7 +300,7 @@ class LoginScreen(Screen):
         pwd = self.password.text.strip()
 
         if not user or not pwd:
-            self.feedback_lbl.text = "Please enter both username and password."
+            self.feedback_lbl.text = "Please enter both Email Address and password."
             self.feedback_lbl.color = THEME["danger"]
             return
 
@@ -311,7 +311,7 @@ class LoginScreen(Screen):
                 self.username.text = ""
                 self.password.text = ""
             else:
-                self.feedback_lbl.text = "Invalid username or password."
+                self.feedback_lbl.text = "Invalid Email Address or password."
                 self.feedback_lbl.color = THEME["danger"]
         else:  # signup
             if self.db.create_user(user, pwd):
@@ -322,7 +322,7 @@ class LoginScreen(Screen):
                 self.username.text = user  # Keep username filled
                 self.password.text = ""
             else:
-                self.feedback_lbl.text = "Username already exists."
+                self.feedback_lbl.text = "Email Address already exists."
                 self.feedback_lbl.color = THEME["danger"]
 
 

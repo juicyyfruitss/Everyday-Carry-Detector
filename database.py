@@ -56,6 +56,12 @@ class DB:
             return True
         return False
 
+    def GetCurrentUser(self):
+        """
+        returning the currently used email address
+        """
+
+        return self.current_user  # this must be the email string
     # class DBHandler(logging.Handler):
     #     def __init__(self):
     #         super().__init__()
