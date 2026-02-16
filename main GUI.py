@@ -139,7 +139,7 @@ class ItemCard(BoxLayout):
         ))
 
         # Description
-        desc_text = desc if desc else "No description provided"
+        desc_text = f"{desc} | {self.index}"
         text_content.add_widget(Label(
             text=desc_text,
             font_size=dp(14),
@@ -351,8 +351,11 @@ class AddItemScreen(Screen):
         self.item_name = ProInput(hint_text="Item Name (e.g. Wallet)")
         self.item_desc = ProInput(
             hint_text="Description (e.g. Leather, brown)")
+        self.item_mac = ProInput(
+            hint_text="MAC Address (e.g. 7C:9E:BD:12:45:AF)")
         form.add_widget(self.item_name)
         form.add_widget(self.item_desc)
+        form.add_widget(self.item_mac)
         root.add_widget(form)
 
         # Spacer
@@ -386,10 +389,14 @@ class AddItemScreen(Screen):
     def save_item(self, instance):
         name = self.item_name.text.strip()
         desc = self.item_desc.text.strip()
+        mac = self.item_mac.text.strip()
         if name:
+            db = database.DB()
+            db.add_item(name, desc, mac)
             items_list.append({
                 "name": name,
-                "desc": desc
+                "desc": desc,
+                "mac": mac
             })
             self.manager.get_screen('main').update_items_list()
             self.cancel(instance)
@@ -424,8 +431,10 @@ class EditItemScreen(Screen):
             20), size_hint_y=None, height=dp(200))
         self.item_name = ProInput(hint_text="Item Name")
         self.item_desc = ProInput(hint_text="Description")
+        self.item_mac = ProInput(hint_text="MAC Address")
         form.add_widget(self.item_name)
         form.add_widget(self.item_desc)
+        form.add_widget(self.item_mac)
         root.add_widget(form)
 
         # Actions
@@ -465,8 +474,9 @@ class EditItemScreen(Screen):
 
     def load_item(self, index, item_data):
         self.edit_index = index
-        self.item_name.text = item_data['name']
+        self.item_name.text = item_data.get('name', '')
         self.item_desc.text = item_data.get('desc', '')
+        self.item_mac.text = item_data.get("mac", "")
 
     def cancel(self, instance):
         self.manager.current = 'main'
@@ -475,16 +485,26 @@ class EditItemScreen(Screen):
     def save_item(self, instance):
         name = self.item_name.text.strip()
         desc = self.item_desc.text.strip()
+        mac = self.item_mac.text.strip()
         if self.edit_index is not None and name:
+            db = database.DB()
+            item_id = items_list[self.edit_index]["id"]
+            # Update in database
+            db.update_item(item_id, name, desc, mac)
+
             items_list[self.edit_index] = {
                 "name": name,
-                "desc": desc
+                "desc": desc,
+                "mac": mac
             }
             self.manager.get_screen('main').update_items_list()
             self.cancel(instance)
 
     def delete_item(self, instance):
         if self.edit_index is not None:
+            db = database.DB()
+            item_id = items_list[self.edit_index]["id"]
+            db.delete_item(item_id)
             items_list.pop(self.edit_index)
             self.manager.get_screen('main').update_items_list()
             self.cancel(instance)
@@ -677,6 +697,16 @@ class MainScreen(Screen):
         self.scroll = ScrollView(size_hint=(1, 1), do_scroll_x=False)
         self.items_grid = GridLayout(cols=1, spacing=dp(
             15), size_hint_y=None, padding=[dp(20), dp(10)])
+        db = database.DB()
+        for row in db.get_items():
+            item_id, name, desc, mac = row
+            items_list.append({
+                "id": item_id,
+                "name": name,
+                "desc": desc,
+                "mac": mac
+            })
+
         self.items_grid.bind(minimum_height=self.items_grid.setter('height'))
 
         self.scroll.add_widget(self.items_grid)

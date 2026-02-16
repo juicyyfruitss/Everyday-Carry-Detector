@@ -24,8 +24,42 @@ class DB:
         if not userTableExist.fetchone():
             self.cur.execute(
                 "CREATE TABLE users (username TEXT PRIMARY KEY, password TEXT)")
+        # Items table
+        itemTableExist = self.cur.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='items';")
+        if not itemTableExist.fetchone():
+            self.cur.execute("""
+               CREATE TABLE items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT,
+            description TEXT,
+            mac TEXT
+                 )
+         """)
 
         self.conn.commit()
+
+    def add_item(self, name, desc, mac):
+        self.cur.execute(
+            "INSERT INTO items (name, description, mac) VALUES (?, ?, ?)",
+            (name, desc, mac)
+        )
+        self.conn.commit()
+
+    def update_item(self, item_id, name, desc, mac):
+        self.cur.execute(
+            "UPDATE items SET name=?, description=?, mac=? WHERE id=?",
+            (name, desc, mac, item_id)
+        )
+        self.conn.commit()
+
+    def delete_item(self, item_id):
+        self.cur.execute("DELETE FROM items WHERE id=?", (item_id,))
+        self.conn.commit()
+
+    def get_items(self):
+        self.cur.execute("SELECT id, name, description, mac FROM items")
+        return self.cur.fetchall()
 
     def LogEvent(self, level, event, timestamp):
         self.cur.execute(
