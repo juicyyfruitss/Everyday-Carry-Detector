@@ -1,99 +1,126 @@
-import serial
 import json
 import time
-import requests  # only if using PC relay via HTTP
+import threading
+import paho.mqtt.client as mqtt
+import RPi.GPIO as GPIO
+from datetime import datetime
 
 # ---------------- CONFIG ----------------
-SERIAL_PORT = '/dev/ttyUSB0'  # check with ls /dev/ttyUSB*
-BAUD_RATE = 115200
-LAST_SEEN_FILE = 'last_seen.json'
+MQTT_BROKER = "localhost"
+MQTT_TOPIC = "ble/#"
 
-# Items you want to monitor for alerts (can be MAC addresses or names)
-MONITORED_ITEMS = {
-    "48:87:2d:9d:56:a3": "Wallet",
-    "48:87:2d:9d:56:94": "Keys",
-}
+PIR_PIN = 17
+EXIT_TIMEOUT_SECONDS = 20   # How recent an item must be seen to count as "with you"
 
-# PC Relay endpoint for alerts
-PC_RELAY_URL = "http://192.168.1.139:5000/alert"  # replace with your PC relay endpoint
+LAST_SEEN_FILE = "last_seen.json"
+LOG_FILE = "log.json"
+REGISTERED_ITEMS_FILE = "registered_items.json"
+# ----------------------------------------
 
 
+# ---------------- GPIO SETUP ----------------
+GPIO.setmode(GPIO.BCM)
+GPIO.setup(PIR_PIN, GPIO.IN)
 
 
-last_alert_time = {}
-
-# ---------------- INIT ----------------
-# Load or create last_seen.json
-try:
-    with open(LAST_SEEN_FILE, 'r') as f:
-        last_seen = json.load(f)
-except:
-    last_seen = {}
-
-# Open Serial connection to ESP32
-ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1)
-time.sleep(2)  # Wait for Serial to stabilize
-
-print("Front Door Tracker running...")
-
-# ---------------- FUNCTIONS ----------------
-def notify_missing(item_name, last_room):
-    """
-    Send SMS using Twilio.
-    """
-    now = time.time()
-
-    # Prevent repeated alerts
-    if item_name in last_alert_time:
-        if now - last_alert_time[item_name] < ALERT_COOLDOWN:
-            return
-
-    message_body = f"Missing Item Alert\n{item_name} last seen in {last_room}"
-
-    print("ALERT:", message_body)
-
+# ---------------- HELPERS ----------------
+def load_json(path):
     try:
-        message = twilio_client.messages.create(
-            body=message_body,
-            from_=TWILIO_FROM,
-            to=TWILIO_TO
-        )
-        print("SMS sent! SID:", message.sid)
-        last_alert_time[item_name] = now
-    except Exception as e:
-        print("Failed to send SMS:", e)
+        with open(path, "r") as f:
+            return json.load(f)
+    except:
+        return {}
 
-# ---------------- MAIN LOOP ----------------
-while True:
-    try:
-        line = ser.readline().decode('utf-8', errors='ignore').strip()
-        if not line:
+
+def save_json(path, data):
+    with open(path, "w") as f:
+        json.dump(data, f, indent=4)
+
+
+def log_event(entry):
+    logs = load_json(LOG_FILE)
+    if "events" not in logs:
+        logs["events"] = []
+
+    logs["events"].append(entry)
+    save_json(LOG_FILE, logs)
+
+
+# ---------------- MQTT CALLBACK ----------------
+def on_message(client, userdata, msg):
+    payload = json.loads(msg.payload.decode())
+
+    mac = payload["item"]
+    room = payload["room"]
+    rssi = payload.get("rssi", None)
+
+    timestamp = datetime.now().isoformat()
+
+    # Load current last seen
+    last_seen = load_json(LAST_SEEN_FILE)
+
+    # DO NOT STORE FRONT DOOR AS LAST SEEN
+    if room != "Front Door":
+        last_seen[mac] = {
+            "room": room,
+            "timestamp": timestamp,
+            "rssi": rssi
+        }
+        save_json(LAST_SEEN_FILE, last_seen)
+
+    # Still log the event
+    log_event({
+        "item": mac,
+        "room": room,
+        "timestamp": timestamp,
+        "rssi": rssi
+    })
+
+
+# ---------------- EXIT CHECK LOGIC ----------------
+def check_missing_items():
+    print(" Motion detected at front door. Checking items...")
+
+    registered = load_json(REGISTERED_ITEMS_FILE)
+    last_seen = load_json(LAST_SEEN_FILE)
+
+    now = datetime.now()
+
+    missing_items = []
+
+    for mac, info in registered.items():
+        if mac not in last_seen:
+            missing_items.append(info["name"])
             continue
-        if not line.startswith("{"):  # skip non-JSON lines
-            continue
 
-        data = json.loads(line)
-        item_mac = data.get("item")
-        room = data.get("room")
+        last_time = datetime.fromisoformat(last_seen[mac]["timestamp"])
+        seconds_since_seen = (now - last_time).total_seconds()
 
-        if not item_mac or not room:
-            continue
+        if seconds_since_seen > EXIT_TIMEOUT_SECONDS:
+            missing_items.append(info["name"])
 
-        # Update last seen
-        last_seen[item_mac] = room
-        with open(LAST_SEEN_FILE, 'w') as f:
-            json.dump(last_seen, f, indent=2)
+    if missing_items:
+        print("❗ Missing Items:")
+        for item in missing_items:
+            print(" -", item)
+    else:
+        print(" All items accounted for.")
 
-        print(f"Detected {MONITORED_ITEMS.get(item_mac, item_mac)} at {room}")
 
-        # Only trigger alert if this is the Front Door
-        if room == "Front Door":
-            # Check monitored items
-            for mac, name in MONITORED_ITEMS.items():
-                last_room = last_seen.get(mac)
-                if last_room and last_room != "Front Door":
-                    notify_missing(name, last_room)
+# ---------------- PIR CALLBACK ----------------
+def pir_callback(channel):
+    check_missing_items()
 
-    except Exception as e:
-        print("Error processing line:", e)
 
+GPIO.add_event_detect(PIR_PIN, GPIO.RISING, callback=pir_callback, bouncetime=3000)
+
+
+# ---------------- MQTT SETUP ----------------
+client = mqtt.Client()
+client.on_message = on_message
+client.connect(MQTT_BROKER, 1883, 60)
+client.subscribe(MQTT_TOPIC)
+
+
+print(" Frontdoor Tracker Running...")
+client.loop_forever()
